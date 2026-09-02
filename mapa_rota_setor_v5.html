@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>PROSPECT - Mapa de Rota por Setor</title>
+<style>
+:root{--azul:#1f2f8f;--azul2:#3b5bdb;--ciano:#17b3c4;--cinza:#6b7280;--bg:#f2f3f7;--borda:#e5e7eb}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:#111827}
+#app{display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto;background:var(--bg);box-shadow:0 0 24px rgba(0,0,0,.08)}
+#topo{padding:10px 14px;background:#fff;border-bottom:1px solid var(--borda)}
+#topo b{font-size:14px}
+#topo small{display:block;color:var(--cinza);font-size:11px;margin-top:2px}
+
+/* ---- MAPA (motor próprio, sem bibliotecas) ---- */
+#map{position:relative;height:44vh;min-height:250px;width:100%;overflow:hidden;background:#e8eaed;
+     touch-action:none;cursor:grab;user-select:none}
+#map.arrastando{cursor:grabbing}
+#tiles,#marcas{position:absolute;left:0;top:0;width:100%;height:100%}
+#marcas{pointer-events:none}
+#tiles img{position:absolute;width:256px;height:256px;pointer-events:none}
+.mk{position:absolute;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);
+    pointer-events:auto;cursor:pointer;transform:translate(-50%,-50%)}
+.mk.on{border-width:3px;z-index:5}
+#zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:5px;z-index:10}
+#zoom button{width:34px;height:34px;border-radius:8px;border:1px solid #cbd0d6;background:#fff;
+             font-size:19px;font-weight:700;color:#374151;cursor:pointer;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+#credito{position:absolute;left:0;bottom:0;background:rgba(255,255,255,.75);font-size:9px;color:#444;padding:1px 5px;z-index:10}
+
+#painel{flex:1;overflow-y:auto;padding:0 12px 28px}
+.puxador{width:44px;height:5px;background:#d1d5db;border-radius:99px;margin:8px auto 10px}
+.busca{position:relative;margin-bottom:10px}
+.busca input{width:100%;padding:12px 14px 12px 40px;border:1px solid var(--borda);border-radius:12px;font-size:15px;background:#fff;outline:none}
+.busca input:focus{border-color:var(--azul2);box-shadow:0 0 0 3px rgba(59,91,219,.12)}
+.busca svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.45}
+.filtros{display:flex;gap:8px;margin-bottom:10px}
+.filtros select{flex:1;min-width:0;padding:10px;border:1px solid var(--borda);border-radius:10px;background:#fff;font-size:13px;font-weight:600;color:#374151;outline:none}
+.filtros select:focus{border-color:var(--azul2);box-shadow:0 0 0 3px rgba(59,91,219,.12)}
+.contador{font-size:12px;color:var(--cinza);margin:2px 4px 8px}
+.card{background:#fff;border:1px solid var(--borda);border-radius:14px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.05);cursor:pointer}
+.card.sel{border-color:var(--azul2);box-shadow:0 0 0 3px rgba(59,91,219,.15)}
+.card-top{display:flex;align-items:center;gap:8px}
+.bolinha{width:26px;height:26px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700}
+.nome{flex:1;font-weight:700;font-size:14px;line-height:1.25;text-transform:uppercase}
+.cod{font-size:11px;background:#f3f4f6;border-radius:8px;padding:4px 8px;white-space:nowrap}
+.sub{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--cinza);margin-top:6px}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.end{font-size:12px;color:var(--cinza);margin-top:4px;line-height:1.35}
+.infos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.info{background:#f8f9fc;border:1px solid var(--borda);border-radius:10px;padding:8px;text-align:center}
+.info .lbl{font-size:10px;color:var(--cinza);text-transform:uppercase;letter-spacing:.3px}
+.info .val{font-size:13px;font-weight:700;margin-top:2px}
+.linhas{margin-top:10px;border-top:1px dashed var(--borda);padding-top:8px}
+.linha{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0}
+.linha b{color:#374151;font-weight:600}
+.linha span{color:var(--cinza);text-align:right}
+.botoes{display:flex;gap:8px;margin-top:12px}
+.btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:12px;border-radius:10px;border:none;font-size:14px;font-weight:700;color:#fff;cursor:pointer;text-decoration:none}
+.btn-maps{background:var(--azul2)}
+.btn-form{background:var(--ciano)}
+.btn:active{filter:brightness(.92)}
+.status{font-size:11.5px;margin-top:8px;color:var(--cinza);min-height:14px}
+.status.erro{color:#b91c1c}.status.ok{color:#047857}
+.vazio{text-align:center;color:var(--cinza);font-size:13px;padding:30px 10px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topo">
+    <b>PROSPECT — Mapa de Rota por Setor</b>
+    <small id="subtitulo"></small>
+  </div>
+  <div id="map">
+    <div id="tiles"></div>
+    <div id="marcas"></div>
+    <div id="zoom"><button id="zIn" type="button">+</button><button id="zOut" type="button">−</button></div>
+    <div id="credito">Map data © Google</div>
+  </div>
+  <div id="painel">
+    <div class="puxador"></div>
+    <div class="busca">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="q" type="search" placeholder="Pesquisar PDV (Nome ou Código)...">
+    </div>
+    <div class="filtros">
+      <select id="fUnb"></select>
+      <select id="fSetor"></select>
+    </div>
+    <div class="contador" id="contador"></div>
+    <div id="lista"></div>
+  </div>
+</div>
+
+<script>
+/* ==========================================================
+   CONFIGURAÇÃO FIXA
+   ========================================================== */
+var FORM_URL = "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=GUvwznZ3lEq4mzdcd6j5Nn8ytTGQyeNOthfFskdjeYJURFJYTFhETklRRDROR01RSEtQN1lFSVZLWS4u";
+
+/* IDs de pré-preenchimento do Forms (ordem das perguntas 1..6) */
+var FORM_IDS = {
+  nome : "r87c04fb7e9414a79bba7ad603de55545", // 1 - Nome do PDV
+  cod  : "r5657e77312f24f5a895bd9ee351ea5f2", // 2 - Código do PDV
+  unb  : "rf039eddc107f48a08d30af8c204bf852", // 3 - UNB
+  setor: "r965fe22f67f64a6e9748738f58edc014", // 4 - Setor
+  gps  : "r881dd5d8ff524c8f853542f95b97225b", // 5 - Coordenada capturada (GPS)
+  dist : "r50813e97f7d74efeaf76339b186764ba"  // 6 - Distância até o PDV (m)
+};
+
+/* ==========================================================
+   BASE DE PDVs (colar novas linhas abaixo, mesmo formato)
+   ========================================================== */
+var BASE = "UNB\tUNB MOBILIZAÇÃO\tSETOR SIMULADO\tplace_id_ambev\taddress_complete\tcep_formatado\tname\tcity\tlat\tlon\tcod_unb_lpad\tcod_territorio\tnationalPhoneNumber\tuf\tmax_open_probability_score\tscore_threshold\topen_probability_score\n"
++ "301\tCDD Mauá\t102\t00ddd55e00bd33561fac9a06118bbd66\tAv. Sapopemba, 3846 - Chácara Mafalda, São Paulo\t03374-000\tPizzaria Bahia\tSão Paulo\t-23,5756892\t-46,5524289\t0301\t26608\t(11) 97466-2616\tSP\t0,73\t0,51\t0,63\n"
++ "301\tCDD Mauá\t102\t01f8b98bf6d3078ee7ce9a09dbc132e3\tR. Manuel da Luz Drumond, 746B - Vila Bela, São Paulo\t08340-410\tAdega Dori\tSão Paulo\t-23,6153712\t-46,4548963\t0301\t20666\t(11) 98127-3099\tSP\t0,73\t0,51\t0,52\n"
++ "301\tCDD Mauá\t103\t02328c07ccbbac905f75b13b55a462cf\tR. Jaguaraçu, 180 - Jardim Sao Cristovao, São Paulo\t03930-080\tPizzaria Luana & Shekinah Favorita\tSão Paulo\t-23,580179\t-46,497141\t0301\t20668\t(11) 2746-8194\tSP\t0,73\t0,51\t0,59\n"
++ "301\tCDD Mauá\t103\t03daa2de5e344c72525e295e1568bcf8\tR. John Speers, 1380 - Jardim Helian, São Paulo\t08265-040\tPizzaria Guaranizza\tSão Paulo\t-23,5678391\t-46,4581642\t0301\t20663\t(11) 99007-3913\tSP\t0,73\t0,51\t0,57\n"
++ "301\tCDD Mauá\t104\tTESTE0000000000000000000000000A1\tAv. Ragueb Chohfi, 1200 - Jardim Sao Carlos, São Paulo\t08375-000\tTESTE - Bar do Ze\tSão Paulo\t-23,6081\t-46,4392\t0301\t20670\t(11) 90000-0001\tSP\t0,73\t0,51\t0,68\n"
++ "301\tCDD Mauá\t104\tTESTE0000000000000000000000000A2\tR. Cipriano Rodrigues, 300 - Vila Alpina, São Paulo\t03209-000\tTESTE - Mercearia Sao Jorge\tSão Paulo\t-23,5901\t-46,5412\t0301\t20671\t(11) 90000-0002\tSP\t0,73\t0,51\t0,55\n"
++ "297\tTESTE - CDD Modelo\t201\tTESTE0000000000000000000000000B1\tAv. Paes de Barros, 2100 - Mooca, São Paulo\t03115-000\tTESTE - Adega Central\tSão Paulo\t-23,5628\t-46,5847\t0297\t31001\t(11) 90000-0003\tSP\t0,70\t0,50\t0,61\n"
++ "297\tTESTE - CDD Modelo\t201\tTESTE0000000000000000000000000B2\tR. Bresser, 900 - Bras, São Paulo\t03052-000\tTESTE - Pizzaria Bresser\tSão Paulo\t-23,5391\t-46,6042\t0297\t31002\t(11) 90000-0004\tSP\t0,70\t0,50\t0,58\n"
++ "297\tTESTE - CDD Modelo\t202\tTESTE0000000000000000000000000B3\tR. da Mooca, 3500 - Mooca, São Paulo\t03104-000\tTESTE - Emporio da Mooca\tSão Paulo\t-23,5723\t-46,5961\t0297\t31003\t(11) 90000-0005\tSP\t0,70\t0,50\t0,53\n"
++ "297\tTESTE - CDD Modelo\t202\tTESTE0000000000000000000000000B4\tAv. Celso Garcia, 4100 - Tatuape, São Paulo\t03063-000\tTESTE - Bar do Tatuape\tSão Paulo\t-23,5406\t-46,5698\t0297\t31004\t(11) 90000-0006\tSP\t0,70\t0,50\t0,66";
+
+var PALETA = ["#7c4dff","#00b894","#e17055","#0984e3","#fdcb6e","#e84393","#00cec9","#6ab04c",
+              "#eb4d4b","#22a6b3","#f0932b","#4834d4","#badc58","#ff7979","#30336b","#009432"];
+
+/* ==========================================================
+   PARSER
+   ========================================================== */
+function detectSep(l){ if(l.indexOf("\t")>=0) return "\t"; return (l.split(";").length>2) ? ";" : ","; }
+function splitLinha(l,sep){ var o=[],c="",a=false,i,ch;
+  for(i=0;i<l.length;i++){ ch=l.charAt(i);
+    if(ch==='"'){a=!a;continue;}
+    if(ch===sep && !a){o.push(c);c="";continue;}
+    c+=ch; }
+  o.push(c);
+  return o.map(function(s){return s.trim();}); }
+function num(v){ if(v===null||v===undefined) return null; var s=String(v).trim(); if(!s) return null;
+  var n=parseFloat(s.replace(/\.(?=\d{3}\b)/g,"").replace(",",".")); return isNaN(n)?null:n; }
+function parseBase(txt){
+  var L=txt.replace(/\r/g,"").split("\n").filter(function(x){return x.trim()!=="";});
+  if(!L.length) return [];
+  var sep=detectSep(L[0]);
+  var h=splitLinha(L[0],sep).map(function(x){return x.toLowerCase();});
+  function ix(ns){ for(var i=0;i<ns.length;i++){ var j=h.indexOf(ns[i]); if(j>=0) return j; } return -1; }
+  var C={ unb:ix(["unb","cod_unb"]), unbmob:ix(["unb mobilização","unb mobilizacao"]),
+    setor:ix(["setor simulado","setor_simulado","setor","cod_setor"]), pid:ix(["place_id_ambev","place_id"]),
+    end:ix(["address_complete","endereco","endereço"]), cep:ix(["cep_formatado","cep"]),
+    nome:ix(["name","nome","nome_pdv"]), city:ix(["city","cidade"]), lat:ix(["lat","latitude"]),
+    lon:ix(["lon","long","longitude"]), terr:ix(["cod_territorio","cod_pdv","codigo"]),
+    fone:ix(["nationalphonenumber","telefone","fone"]), uf:ix(["uf","estado"]),
+    sthr:ix(["score_threshold"]), sopen:ix(["open_probability_score"]),
+    gps:ix(["gps","gps_pct"]), vplan:ix(["visitas_plan","qnt_visitas_plan","den_gps","vt"]),
+    vok:ix(["visitas_ok","qnt_visitas_ok","num_gps","visita_efetiva"]) };
+  function G(a,i){ return (i>=0 && i<a.length) ? a[i] : ""; }
+  var out=[],i;
+  for(i=1;i<L.length;i++){
+    var a=splitLinha(L[i],sep);
+    var lat=num(G(a,C.lat)), lon=num(G(a,C.lon));
+    if(lat===null||lon===null) continue;
+    out.push({ unb:G(a,C.unb), unbMob:G(a,C.unbmob), setor:G(a,C.setor)||"—",
+      placeId:G(a,C.pid)||("p"+i), endereco:G(a,C.end), cep:G(a,C.cep),
+      nome:G(a,C.nome)||"SEM NOME", cidade:G(a,C.city), lat:lat, lon:lon,
+      cod:G(a,C.terr), fone:G(a,C.fone), uf:G(a,C.uf),
+      scoreThr:num(G(a,C.sthr)), score:num(G(a,C.sopen)),
+      gps:num(G(a,C.gps)), vPlan:num(G(a,C.vplan)), vOk:num(G(a,C.vok)) });
+  }
+  return out;
+}
+
+/* ==========================================================
+   MOTOR DE MAPA PRÓPRIO (tiles do Google, zero dependências)
+   ========================================================== */
+var TILE=256;
+var mapEl=document.getElementById("map"),
+    tilesEl=document.getElementById("tiles"),
+    marcasEl=document.getElementById("marcas");
+var zoom=13, cLat=-23.58, cLon=-46.50, cacheTiles={};
+
+function project(lat,lon,z){
+  var s=TILE*Math.pow(2,z);
+  var sn=Math.sin(lat*Math.PI/180);
+  sn=Math.max(-0.9999,Math.min(0.9999,sn));
+  return { x:(lon+180)/360*s, y:(0.5 - Math.log((1+sn)/(1-sn))/(4*Math.PI))*s };
+}
+function unproject(x,y,z){
+  var s=TILE*Math.pow(2,z);
+  var lon=x/s*360-180;
+  var n=Math.PI-2*Math.PI*y/s;
+  var lat=180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
+  return { lat:lat, lon:lon };
+}
+function desenharMapa(){
+  var W=mapEl.clientWidth, H=mapEl.clientHeight;
+  if(!W||!H) return;
+  var c=project(cLat,cLon,zoom), ox=c.x-W/2, oy=c.y-H/2;
+  var n=Math.pow(2,zoom);
+  var x0=Math.floor(ox/TILE), x1=Math.floor((ox+W)/TILE);
+  var y0=Math.floor(oy/TILE), y1=Math.floor((oy+H)/TILE);
+  var usados={}, tx, ty, k, img, wx;
+  for(tx=x0;tx<=x1;tx++){
+    for(ty=y0;ty<=y1;ty++){
+      if(ty<0||ty>=n) continue;
+      wx=((tx%n)+n)%n;
+      k=zoom+"_"+wx+"_"+ty+"_"+tx;
+      usados[k]=1;
+      img=cacheTiles[k];
+      if(!img){
+        img=document.createElement("img");
+        img.draggable=false;
+        img.alt="";
+        img.src="https://mt"+((wx+ty)%4)+".google.com/vt/lyrs=m&hl=pt-BR&x="+wx+"&y="+ty+"&z="+zoom;
+        cacheTiles[k]=img;
+        tilesEl.appendChild(img);
+      }
+      img.style.left=(tx*TILE-ox)+"px";
+      img.style.top =(ty*TILE-oy)+"px";
+    }
+  }
+  for(k in cacheTiles){ if(!usados[k]){ tilesEl.removeChild(cacheTiles[k]); delete cacheTiles[k]; } }
+  desenharMarcas(ox,oy);
+}
+function desenharMarcas(ox,oy){
+  marcasEl.innerHTML="";
+  var W=mapEl.clientWidth, H=mapEl.clientHeight;
+  FILTRADOS.forEach(function(p){
+    var q=project(p.lat,p.lon,zoom), x=q.x-ox, y=q.y-oy;
+    if(x<-40||y<-40||x>W+40||y>H+40) return;
+    var ativo = SEL && SEL.placeId===p.placeId, t = ativo?26:18;
+    var d=document.createElement("div");
+    d.className="mk"+(ativo?" on":"");
+    d.style.left=x+"px"; d.style.top=y+"px";
+    d.style.width=t+"px"; d.style.height=t+"px";
+    d.style.background=corDe(p.setor);
+    d.title=p.nome+" — Setor "+p.setor;
+    d.onclick=function(ev){ ev.stopPropagation(); selecionar(p,true); };
+    marcasEl.appendChild(d);
+  });
+}
+function centralizar(lat,lon,z){ cLat=lat; cLon=lon; if(z) zoom=Math.max(3,Math.min(19,z)); desenharMapa(); }
+function enquadrar(pts){
+  if(!pts.length) return;
+  if(pts.length===1){ centralizar(pts[0].lat,pts[0].lon,16); return; }
+  var minLat=90,maxLat=-90,minLon=180,maxLon=-180;
+  pts.forEach(function(p){ minLat=Math.min(minLat,p.lat); maxLat=Math.max(maxLat,p.lat);
+                           minLon=Math.min(minLon,p.lon); maxLon=Math.max(maxLon,p.lon); });
+  var W=mapEl.clientWidth-60, H=mapEl.clientHeight-60, z;
+  for(z=18; z>=3; z--){
+    var a=project(minLat,minLon,z), b=project(maxLat,maxLon,z);
+    if(Math.abs(b.x-a.x)<=W && Math.abs(b.y-a.y)<=H) break;
+  }
+  centralizar((minLat+maxLat)/2,(minLon+maxLon)/2,z);
+}
+/* --- arraste, zoom por botão, duplo toque e pinça --- */
+(function(){
+  var arr=false, lx=0, ly=0, moveu=false, pinch=0;
+  function pos(e){ return e.touches ? {x:e.touches[0].clientX,y:e.touches[0].clientY}
+                                    : {x:e.clientX,y:e.clientY}; }
+  function dist(e){ var a=e.touches[0], b=e.touches[1];
+    return Math.sqrt(Math.pow(a.clientX-b.clientX,2)+Math.pow(a.clientY-b.clientY,2)); }
+  function ini(e){
+    if(e.touches && e.touches.length===2){ pinch=dist(e); arr=false; return; }
+    arr=true; moveu=false; var p=pos(e); lx=p.x; ly=p.y; mapEl.classList.add("arrastando");
+  }
+  function mov(e){
+    if(e.touches && e.touches.length===2 && pinch){
+      e.preventDefault();
+      var d=dist(e), r=d/pinch;
+      if(r>1.5){ zoom=Math.min(19,zoom+1); pinch=d; desenharMapa(); }
+      else if(r<0.66){ zoom=Math.max(3,zoom-1); pinch=d; desenharMapa(); }
+      return;
+    }
+    if(!arr) return;
+    e.preventDefault();
+    var p=pos(e), dx=p.x-lx, dy=p.y-ly;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) moveu=true;
+    lx=p.x; ly=p.y;
+    var c=project(cLat,cLon,zoom), n=unproject(c.x-dx,c.y-dy,zoom);
+    cLat=Math.max(-85,Math.min(85,n.lat)); cLon=n.lon;
+    desenharMapa();
+  }
+  function fim(){ arr=false; pinch=0; mapEl.classList.remove("arrastando"); }
+  mapEl.addEventListener("mousedown",ini);
+  window.addEventListener("mousemove",mov);
+  window.addEventListener("mouseup",fim);
+  mapEl.addEventListener("touchstart",ini,{passive:false});
+  mapEl.addEventListener("touchmove",mov,{passive:false});
+  mapEl.addEventListener("touchend",fim);
+  mapEl.addEventListener("wheel",function(e){
+    e.preventDefault();
+    zoom = e.deltaY<0 ? Math.min(19,zoom+1) : Math.max(3,zoom-1);
+    desenharMapa();
+  },{passive:false});
+  mapEl.addEventListener("dblclick",function(){ zoom=Math.min(19,zoom+1); desenharMapa(); });
+  document.getElementById("zIn").onclick =function(){ zoom=Math.min(19,zoom+1); desenharMapa(); };
+  document.getElementById("zOut").onclick=function(){ zoom=Math.max(3,zoom-1); desenharMapa(); };
+})();
+
+/* ==========================================================
+   ESTADO + LISTA
+   ========================================================== */
+var PDVS=parseBase(BASE), FILTRADOS=[], SEL=null, corSetor={};
+function $(id){ return document.getElementById(id); }
+function corDe(s){ if(!(s in corSetor)) corSetor[s]=PALETA[Object.keys(corSetor).length%PALETA.length]; return corSetor[s]; }
+function fpct(v){ return v==null ? "—" : ((v<=1?v*100:v).toFixed(0)+"%"); }
+function fnum(v){ return v==null ? "—" : v; }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function montarSetores(){
+  var fu=$("fUnb").value, atual=$("fSetor").value, sets=[];
+  PDVS.forEach(function(p){ if((fu==="__all__"||String(p.unb)===fu) && sets.indexOf(String(p.setor))<0) sets.push(String(p.setor)); });
+  sets.sort(function(a,b){ return a.localeCompare(b,"pt",{numeric:true}); });
+  $("fSetor").innerHTML='<option value="__all__">Todos os setores</option>'
+    + sets.map(function(s){ return '<option value="'+esc(s)+'">Setor '+esc(s)+'</option>'; }).join("");
+  $("fSetor").value = sets.indexOf(atual)>=0 ? atual : "__all__";
+}
+function aplicarFiltros(reenquadrar){
+  var q=$("q").value.trim().toLowerCase(), fu=$("fUnb").value, fs=$("fSetor").value;
+  FILTRADOS=PDVS.filter(function(p){
+    if(fu!=="__all__" && String(p.unb)!==fu) return false;
+    if(fs!=="__all__" && String(p.setor)!==fs) return false;
+    if(q && (p.nome||"").toLowerCase().indexOf(q)<0
+         && String(p.cod||"").toLowerCase().indexOf(q)<0
+         && (p.endereco||"").toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  if(SEL && !FILTRADOS.some(function(x){return x.placeId===SEL.placeId;})) SEL=null;
+  if(reenquadrar!==false && !SEL) enquadrar(FILTRADOS); else desenharMapa();
+  desenharLista();
+}
+function cardHTML(p){
+  var sel = SEL && SEL.placeId===p.placeId, c=corDe(p.setor);
+  var h='<div class="card '+(sel?"sel":"")+'" data-id="'+esc(p.placeId)+'">'
+   +'<div class="card-top"><div class="bolinha" style="background:'+c+'">'+esc(String(p.setor).slice(0,3))+'</div>'
+   +'<div class="nome">'+esc(p.nome)+'</div><div class="cod">Cod: '+esc(p.cod||"—")+'</div></div>'
+   +'<div class="sub"><span class="dot" style="background:'+c+'"></span>Setor '+esc(p.setor)+'</div>'
+   +'<div class="end">'+esc(p.endereco||"")+(p.cep?" • "+esc(p.cep):"")+'</div>';
+  if(sel){
+    h+='<div class="infos">'
+     +'<div class="info"><div class="lbl">GPS</div><div class="val">'+fpct(p.gps)+'</div></div>'
+     +'<div class="info"><div class="lbl">Visitas Plan</div><div class="val">'+fnum(p.vPlan)+'</div></div>'
+     +'<div class="info"><div class="lbl">Visitas OK</div><div class="val">'+fnum(p.vOk)+'</div></div></div>'
+     +'<div class="linhas">'
+     +'<div class="linha"><b>Nome do PDV</b><span>'+esc(p.nome)+'</span></div>'
+     +'<div class="linha"><b>Número do PDV</b><span>'+esc(p.cod||"—")+'</span></div>'
+     +'<div class="linha"><b>Telefone</b><span>'+(p.fone?'<a href="tel:'+p.fone.replace(/\D/g,"")+'">'+esc(p.fone)+'</a>':"—")+'</span></div>'
+     +'<div class="linha"><b>UNB</b><span>'+esc(p.unb)+' — '+esc(p.unbMob||"")+'</span></div>'
+     +'<div class="linha"><b>Setor simulado</b><span>'+esc(p.setor)+'</span></div>'
+     +'<div class="linha"><b>Cidade / UF</b><span>'+esc(p.cidade||"—")+' / '+esc(p.uf||"—")+'</span></div>'
+     +'<div class="linha"><b>Coordenada</b><span>'+p.lat.toFixed(6)+', '+p.lon.toFixed(6)+'</span></div>'
+     +'<div class="linha"><b>Score abertura</b><span>'+(p.score!=null?p.score.toFixed(2):"—")
+       +' (corte '+(p.scoreThr!=null?p.scoreThr.toFixed(2):"—")+')</span></div></div>'
+     +'<div class="botoes">'
+     +'<a class="btn btn-maps" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+p.lat+','+p.lon+'&travelmode=driving">'
+     +'<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M12 2a7 7 0 00-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg>Maps</a>'
+     +'<button class="btn btn-form" type="button" data-form="'+esc(p.placeId)+'">'
+     +'<svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM8 17H6v-2h2v2zm0-4H6v-2h2v2zm0-4H6V7h2v2zm10 8h-8v-2h8v2zm0-4h-8v-2h8v2zm0-4h-8V7h8v2z"/></svg>Formulário</button>'
+     +'</div><div class="status" id="st-'+esc(p.placeId)+'"></div>';
+  }
+  return h+'</div>';
+}
+function desenharLista(){
+  $("contador").textContent=FILTRADOS.length+" PDV(s) exibido(s) de "+PDVS.length;
+  $("lista").innerHTML = FILTRADOS.length ? FILTRADOS.map(cardHTML).join("")
+                                          : '<div class="vazio">Nenhum PDV encontrado.</div>';
+  var cards=$("lista").querySelectorAll(".card"), i;
+  for(i=0;i<cards.length;i++){
+    (function(el){
+      el.addEventListener("click",function(ev){
+        if(ev.target.closest("a")) return;
+        var b=ev.target.closest("[data-form]");
+        if(b){ abrirFormulario(b.getAttribute("data-form")); return; }
+        var p=PDVS.filter(function(x){return x.placeId===el.getAttribute("data-id");})[0];
+        selecionar(p,false);
+      });
+    })(cards[i]);
+  }
+}
+function selecionar(p,doMapa){
+  SEL = (SEL && SEL.placeId===p.placeId && !doMapa) ? null : p;
+  if(SEL) centralizar(SEL.lat,SEL.lon,Math.max(zoom,16)); else desenharMapa();
+  desenharLista();
+  if(SEL){
+    var el=$("lista").querySelector('[data-id="'+SEL.placeId+'"]');
+    if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
+  }
+}
+
+/* ==========================================================
+   FORMULÁRIO + GEOLOCALIZAÇÃO
+   ========================================================== */
+function distM(a1,o1,a2,o2){
+  var R=6371000, r=Math.PI/180, dA=(a2-a1)*r, dO=(o2-o1)*r;
+  var x=Math.sin(dA/2)*Math.sin(dA/2)+Math.cos(a1*r)*Math.cos(a2*r)*Math.sin(dO/2)*Math.sin(dO/2);
+  return Math.round(2*R*Math.asin(Math.sqrt(x)));
+}
+function urlForm(p,pos){
+  var par=[];
+  function add(id,v){ if(id && v!==null && v!==undefined && v!=="") par.push(id+"="+encodeURIComponent(v)); }
+  add(FORM_IDS.nome,p.nome); add(FORM_IDS.cod,p.cod);
+  add(FORM_IDS.unb,p.unb+" - "+(p.unbMob||"")); add(FORM_IDS.setor,p.setor);
+  if(pos){
+    add(FORM_IDS.gps, pos.lat.toFixed(6)+", "+pos.lon.toFixed(6)+" (±"+Math.round(pos.acc)+"m)");
+    add(FORM_IDS.dist, distM(pos.lat,pos.lon,p.lat,p.lon));
+  }
+  return FORM_URL + (par.length ? (FORM_URL.indexOf("?")>=0?"&":"?")+par.join("&") : "");
+}
+function abrirFormulario(id){
+  var p=PDVS.filter(function(x){return x.placeId===id;})[0], st=$("st-"+id);
+  function ir(pos){ window.open(urlForm(p,pos),"_blank","noopener"); }
+  if(!navigator.geolocation){ st.className="status erro"; st.textContent="Sem suporte a GPS. Abrindo formulário..."; ir(null); return; }
+  st.className="status"; st.textContent="📍 Obtendo sua localização...";
+  navigator.geolocation.getCurrentPosition(
+    function(r){
+      var pos={lat:r.coords.latitude,lon:r.coords.longitude,acc:r.coords.accuracy||0};
+      st.className="status ok";
+      st.textContent="GPS capturado (±"+Math.round(pos.acc)+"m) • "+distM(pos.lat,pos.lon,p.lat,p.lon)+"m do PDV. Abrindo formulário...";
+      ir(pos);
+    },
+    function(e){
+      var m={1:"Permissão de localização negada.",2:"Localização indisponível.",3:"Tempo esgotado ao obter GPS."};
+      st.className="status erro"; st.textContent=(m[e.code]||"Erro de GPS")+" Abrindo formulário sem localização...";
+      ir(null);
+    },
+    {enableHighAccuracy:true,timeout:12000,maximumAge:0}
+  );
+}
+
+/* ==========================================================
+   BOOT
+   ========================================================== */
+(function(){
+  var unbs=[];
+  PDVS.forEach(function(p){ if(unbs.indexOf(String(p.unb))<0) unbs.push(String(p.unb)); });
+  unbs.sort();
+  $("fUnb").innerHTML='<option value="__all__">Todas as UNBs</option>'
+    + unbs.map(function(u){
+        var mob=""; PDVS.some(function(p){ if(String(p.unb)===u){ mob=p.unbMob||""; return true; } return false; });
+        return '<option value="'+esc(u)+'">'+esc(u)+(mob?" - "+esc(mob):"")+'</option>';
+      }).join("");
+  montarSetores();
+  $("fUnb").addEventListener("change",function(){ montarSetores(); aplicarFiltros(); });
+  $("fSetor").addEventListener("change",function(){ aplicarFiltros(); });
+  $("q").addEventListener("input",function(){ aplicarFiltros(); });
+  var nSet=[]; PDVS.forEach(function(p){ if(nSet.indexOf(p.setor)<0) nSet.push(p.setor); });
+  $("subtitulo").textContent=PDVS.length+" PDVs • "+unbs.length+" UNB(s) • "+nSet.length+" setor(es)";
+  aplicarFiltros();
+  window.addEventListener("resize",function(){ desenharMapa(); });
+  setTimeout(function(){ aplicarFiltros(); },250);
+})();
+</script>
+</body>
+</html>
